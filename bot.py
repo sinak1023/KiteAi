@@ -1,25 +1,36 @@
 import aiohttp
 import aiofiles
 import asyncio
+import json
 import random
 import datetime
 from aiohttp_socks import ProxyConnector
 
+RESET = "\033[0m"
+YELLOW = "\033[93m"
+CYAN = "\033[96m"
+GREEN = "\033[92m"
+RED = "\033[91m"
+MAGENTA = "\033[95m"
+BLUE = "\033[94m"
+
 # 🔥 Aliens_web3 Banner
-BANNER = """
-█████╗ ██╗     ██╗███████╗███████╗███╗   ██╗███████╗██╗    ██╗██████╗ ██████╗ ██████╗ 
+BANNER = f"""
+{YELLOW}█████╗ ██╗     ██╗███████╗███████╗███╗   ██╗███████╗██╗    ██╗██████╗ ██████╗ ██████╗ 
 ██╔══██╗██║     ██║██╔════╝██╔════╝████╗  ██║██╔════╝██║    ██║██╔══██╗██╔══██╗██╔══██╗
 ███████║██║     ██║███████╗█████╗  ██╔██╗ ██║███████╗██║ █╗ ██║██████╔╝██████╔╝██████╔╝
 ██╔══██║██║     ██║╚════██║██╔══╝  ██║╚██╗██║╚════██║██║███╗██║██╔═══╝ ██╔═══╝ ██╔═══╝ 
 ██║  ██║███████╗██║███████║███████╗██║ ╚████║███████║╚███╔███╔╝██║     ██║     ██║     
 ╚═╝  ╚═╝╚══════╝╚═╝╚══════╝╚══════╝╚═╝  ╚═══╝╚══════╝ ╚══╝╚══╝ ╚═╝     ╚═╝     ╚═╝     
-                         🚀 Aliens_web3 🚀
+                         🚀 {MAGENTA}Aliens_web3{RESET} 🚀
 """
+
 
 MAX_DAILY_POINTS = 200
 POINTS_PER_INTERACTION = 10
 MAX_DAILY_INTERACTIONS = MAX_DAILY_POINTS // POINTS_PER_INTERACTION
 
+# API‌های AI
 AI_ENDPOINTS = {
     "https://deployment-uu9y1z4z85rapgwkss1muuiz.stag-vxzy.zettablock.com/main": {
         "agent_id": "deployment_UU9y1Z4Z85RAPGwkss1mUUiZ",
@@ -37,7 +48,7 @@ async def load_file(filename):
             data = await file.read()
             return [line.strip() for line in data.split("\n") if line.strip() and not line.startswith("#")]
     except FileNotFoundError:
-        print(f"[INFO] No {filename} found.")
+        print(f"{YELLOW}[INFO] No {filename} found.{RESET}")
         return []
 
 class WalletSession:
@@ -58,15 +69,15 @@ class WalletSession:
             self.next_reset_time = datetime.datetime.now() + datetime.timedelta(days=1)
 
     def print_statistics(self):
-        print(f"\n📊 Session {self.session_id} - Wallet: {self.wallet_address}")
-        print(f"💰 Total Points: {self.daily_points}")
-        print(f"⏳ Next Reset: {self.next_reset_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        self.log("📊", f"{CYAN}Current Statistics{RESET}")
+        self.log("💰", f"Total Points: {GREEN}{self.daily_points}{RESET}")
+        self.log("⏳", f"Next Reset: {YELLOW}{self.next_reset_time.strftime('%Y-%m-%d %H:%M:%S')}{RESET}")
 
-def get_random_proxy(proxy_list):
-    if not proxy_list:
-        return None
-    proxy = random.choice(proxy_list)
-    return proxy if proxy.startswith(("http://", "https://", "socks5://", "socks4://")) else None
+    def log(self, emoji, message):
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        session_prefix = f"{BLUE}[Session {self.session_id}]{RESET}"
+        wallet_prefix = f"{GREEN}[{self.wallet_address[:6]}...]{RESET}"
+        print(f"{YELLOW}[{timestamp}]{RESET} {session_prefix} {wallet_prefix} {emoji} {message}")
 
 class KiteAIAutomation:
     def __init__(self, wallet_address, proxy_list, session_id):
@@ -75,81 +86,71 @@ class KiteAIAutomation:
         self.is_running = True
 
     async def send_ai_query(self, session, endpoint, message):
-        agent_id = AI_ENDPOINTS[endpoint]["agent_id"]
         url = f"{endpoint}"
+        headers = {
+            "Accept": "text/event-stream",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0"
+        }
         data = {"message": message, "stream": True}
 
         try:
-            async with session.post(url, json=data) as response:
-                result = await response.text()
-                print(f"🤖 AI Response: {result}")
+            async with session.post(url, json=data, headers=headers, timeout=30) as response:
+                if response.status != 200:
+                    self.session.log("❌", f"API Error: {response.status}")
+                    return ""
+
+                result = ""
+                async for line in response.content:
+                    decoded_line = line.decode("utf-8").strip()
+                    if decoded_line.startswith("data: "):
+                        json_data = decoded_line[6:]
+                        if json_data == "[DONE]":
+                            break
+                        try:
+                            parsed_data = json.loads(json_data)
+                            content = parsed_data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                            if content:
+                                result += content
+                                print(content, end="", flush=True)
+                        except json.JSONDecodeError:
+                            continue
+
+                print("\n")
                 return result.strip()
+
+        except asyncio.TimeoutError:
+            self.session.log("⏳", "Timeout Error: AI server took too long to respond.")
+            return ""
         except Exception as e:
-            print(f"❌ AI Query Error: {e}")
+            self.session.log("❌", f"AI Query Error: {e}")
             return ""
 
-    async def report_usage(self, session, endpoint, message, response):
-        url = "https://quests-usage-dev.prod.zettablock.com/api/report_usage"
-        data = {
-            "wallet_address": self.session.wallet_address,
-            "agent_id": AI_ENDPOINTS[endpoint]["agent_id"],
-            "request_text": message,
-            "response_text": response
-        }
-        try:
-            async with session.post(url, json=data) as res:
-                return res.status == 200
-        except Exception as e:
-            print(f"❌ Reporting Error: {e}")
-            return False
-
-    async def process_ai_interaction(self, session):
-        endpoint = random.choice(list(AI_ENDPOINTS.keys()))
-        question = random.choice(AI_ENDPOINTS[endpoint]["questions"])
-        print(f"🔑 Sending AI query: {question}")
-
-        response = await self.send_ai_query(session, endpoint, question)
-        success = await self.report_usage(session, endpoint, question, response)
-
-        self.session.update_points(success)
-        self.session.print_statistics()
-        await asyncio.sleep(random.uniform(1, 3))
-
     async def run(self):
-        print(f"🚀 Running session for wallet: {self.session.wallet_address}")
+        self.session.log("🚀", "Initializing Kite AI Auto-Interaction System")
+        self.session.log("💼", f"Wallet: {self.session.wallet_address}")
+        self.session.log("🎯", f"Daily Target: {MAX_DAILY_POINTS} points ({MAX_DAILY_INTERACTIONS} interactions)")
+        self.session.log("⏰", f"Next Reset: {self.session.next_reset_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
         while self.is_running:
             self.session.reset_points_if_needed()
             if self.session.daily_points >= MAX_DAILY_POINTS:
-                print("🎯 Max daily points reached. Waiting for reset...")
+                self.session.log("🎯", "Max daily points reached. Waiting for reset...")
                 await asyncio.sleep(60)
                 continue
 
-            proxy = get_random_proxy(self.proxy_list)
-
-            if proxy and proxy.startswith(("socks5://", "socks4://")):
-                connector = ProxyConnector.from_url(proxy)
-                async with aiohttp.ClientSession(connector=connector) as session:
-                    await self.process_ai_interaction(session)
-            else:
-                async with aiohttp.ClientSession() as session:
-                    if proxy:
-                        session._default_headers["Proxy"] = proxy
-                    await self.process_ai_interaction(session)
+            async with aiohttp.ClientSession() as session:
+                await self.send_ai_query(session, random.choice(list(AI_ENDPOINTS.keys())), random.choice(AI_ENDPOINTS["https://deployment-uu9y1z4z85rapgwkss1muuiz.stag-vxzy.zettablock.com/main"]["questions"]))
 
 async def main():
     print(BANNER)
-
     wallets = await load_file("wallets.txt")
     proxies = await load_file("proxies.txt")
 
-    print(f"📊 Loaded {len(wallets)} wallets and {len(proxies)} proxies")
+    print(f"{CYAN}📊 Loaded {len(wallets)} wallets and {len(proxies)} proxies{RESET}")
 
     tasks = [KiteAIAutomation(wallet, proxies, i + 1).run() for i, wallet in enumerate(wallets)]
     await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n🛑 Process terminated by user.")
+    asyncio.run(main())
