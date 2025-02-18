@@ -1,14 +1,11 @@
-import requests
-import json
-import time
-import random
-import datetime
-import asyncio
 import aiohttp
 import aiofiles
+import asyncio
+import random
+import datetime
 from aiohttp_socks import ProxyConnector
 
-# بنر
+# 🔥 Aliens_web3 Banner
 BANNER = """
 █████╗ ██╗     ██╗███████╗███████╗███╗   ██╗███████╗██╗    ██╗██████╗ ██████╗ ██████╗ 
 ██╔══██╗██║     ██║██╔════╝██╔════╝████╗  ██║██╔════╝██║    ██║██╔══██╗██╔══██╗██╔══██╗
@@ -18,7 +15,6 @@ BANNER = """
 ╚═╝  ╚═╝╚══════╝╚═╝╚══════╝╚══════╝╚═╝  ╚═══╝╚══════╝ ╚══╝╚══╝ ╚═╝     ╚═╝     ╚═╝     
                          🚀 Aliens_web3 🚀
 """
-
 
 MAX_DAILY_POINTS = 200
 POINTS_PER_INTERACTION = 10
@@ -69,7 +65,8 @@ class WalletSession:
 def get_random_proxy(proxy_list):
     if not proxy_list:
         return None
-    return random.choice(proxy_list)
+    proxy = random.choice(proxy_list)
+    return proxy if proxy.startswith(("http://", "https://", "socks5://", "socks4://")) else None
 
 class KiteAIAutomation:
     def __init__(self, wallet_address, proxy_list, session_id):
@@ -81,7 +78,7 @@ class KiteAIAutomation:
         agent_id = AI_ENDPOINTS[endpoint]["agent_id"]
         url = f"{endpoint}"
         data = {"message": message, "stream": True}
-        
+
         try:
             async with session.post(url, json=data) as response:
                 result = await response.text()
@@ -106,6 +103,18 @@ class KiteAIAutomation:
             print(f"❌ Reporting Error: {e}")
             return False
 
+    async def process_ai_interaction(self, session):
+        endpoint = random.choice(list(AI_ENDPOINTS.keys()))
+        question = random.choice(AI_ENDPOINTS[endpoint]["questions"])
+        print(f"🔑 Sending AI query: {question}")
+
+        response = await self.send_ai_query(session, endpoint, question)
+        success = await self.report_usage(session, endpoint, question, response)
+
+        self.session.update_points(success)
+        self.session.print_statistics()
+        await asyncio.sleep(random.uniform(1, 3))
+
     async def run(self):
         print(f"🚀 Running session for wallet: {self.session.wallet_address}")
 
@@ -117,20 +126,16 @@ class KiteAIAutomation:
                 continue
 
             proxy = get_random_proxy(self.proxy_list)
-            connector = ProxyConnector.from_url(proxy) if proxy else None
 
-            async with aiohttp.ClientSession(connector=connector) as session:
-                endpoint = random.choice(list(AI_ENDPOINTS.keys()))
-                question = random.choice(AI_ENDPOINTS[endpoint]["questions"])
-                print(f"🔑 Sending AI query: {question}")
-
-                response = await self.send_ai_query(session, endpoint, question)
-                success = await self.report_usage(session, endpoint, question, response)
-
-                self.session.update_points(success)
-                self.session.print_statistics()
-
-                await asyncio.sleep(random.uniform(1, 3))
+            if proxy and proxy.startswith(("socks5://", "socks4://")):
+                connector = ProxyConnector.from_url(proxy)
+                async with aiohttp.ClientSession(connector=connector) as session:
+                    await self.process_ai_interaction(session)
+            else:
+                async with aiohttp.ClientSession() as session:
+                    if proxy:
+                        session._default_headers["Proxy"] = proxy
+                    await self.process_ai_interaction(session)
 
 async def main():
     print(BANNER)
