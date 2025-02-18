@@ -7,11 +7,11 @@
 
     pip install aiohttp aiofiles aiohttp_socks
 
-تو مرحله بعد باید آأرس ولت هاتون رو داخل فایل wallets.txt قرار بدین 
+تو مرحله بعد باید آأرس ولت هاتون رو داخل فایل **wallets.txt** قرار بدین 
 هر آدرس در یک خط
 
     nano wallets.txt
-حالا اگرپراکسی استفاده میکنین اونارو داخل فایل proxies.txt قرار بدین 
+حالا اگرپراکسی استفاده میکنین اونارو داخل فایل **proxies.txt** قرار بدین 
 هر پراکسی در یک خط
 
     nano proxies.txt
